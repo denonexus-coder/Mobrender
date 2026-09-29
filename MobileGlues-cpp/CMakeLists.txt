@@ -96,11 +96,13 @@ add_library(${CMAKE_PROJECT_NAME} SHARED
     gl/log.cpp
     gl/program.cpp
     gl/shader.cpp
+    gl/mg_chunk_drawer_jni.cpp
     gl/framebuffer.cpp
     gl/texture.cpp
     gl/drawing.cpp
     gl/multidraw.cpp
-    bench/multidraw_bench.cpp
+    gl/mg_shader_cache.cpp
+    gl/multidraw_fast.cpp
     gl/mg.cpp
     gl/buffer.cpp
     gl/getter.cpp

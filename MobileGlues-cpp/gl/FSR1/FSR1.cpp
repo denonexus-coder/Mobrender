@@ -367,8 +367,8 @@ void RecreateFSRFBO() {
 
     GLES.glGenTextures(1, &FSR1_Context::g_renderTexture);
     GLES.glBindTexture(GL_TEXTURE_2D, FSR1_Context::g_renderTexture);
-    GLES.glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, FSR1_Context::g_renderWidth, FSR1_Context::g_renderHeight, 0,
-                      GL_RGBA, GL_FLOAT, nullptr);
+    GLES.glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, FSR1_Context::g_renderWidth, FSR1_Context::g_renderHeight, 0,
+                      GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
     GLES.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     GLES.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     GLES.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -497,6 +497,7 @@ void CheckResolutionChange(EGLDisplay display, EGLSurface surface) {
     egl_eglQuerySurface(display, surface, EGL_WIDTH, &width);
     egl_eglQuerySurface(display, surface, EGL_HEIGHT, &height);
     OnResize(width, height);
+    { static int n = 0; if ((n++ % 300) == 0) LOG_V("[FSR1] surface=%dx%d render=%dx%d target=%dx%d", (int)width, (int)height, (int)FSR1_Context::g_renderWidth, (int)FSR1_Context::g_renderHeight, (int)FSR1_Context::g_targetWidth, (int)FSR1_Context::g_targetHeight); }
 
     if (FSR1_Context::g_resolutionChanged) {
         FSR1_Context::g_resolutionChanged = false;

@@ -6,6 +6,7 @@
 // End of Source File Header
 
 #include "multidraw.h"
+#include "multidraw_fast.hpp"
 #include "../config/settings.h"
 #include "buffer.h"
 #include "enable.h"
@@ -583,6 +584,11 @@ typedef void (*glMultiDrawElements_t)(GLenum, const GLsizei*, GLenum, const void
 
 void glMultiDrawElements(GLenum mode, const GLsizei* count, GLenum type, const void* const* indices,
                          GLsizei primcount) {
+    // ── FAST PATH: frustum culling + contiguous merge ──────────────────────
+    // Emite o draw diretamente (via glDrawElements) se conseguir colapsar ou
+    // custar menos que o backend selecionado. Retorna false → fluxo normal.
+    if (mg_multidraw_fast_elements(mode, count, type, indices, primcount)) return;
+
     static glMultiDrawElements_t func_ptr = nullptr;
 
     if (func_ptr == nullptr) {
@@ -616,6 +622,9 @@ typedef void (*glMultiDrawElementsBaseVertex_t)(GLenum, GLsizei*, GLenum, const 
 
 void glMultiDrawElementsBaseVertex(GLenum mode, GLsizei* counts, GLenum type, const void* const* indices,
                                    GLsizei primcount, const GLint* basevertex) {
+    // ── FAST PATH: frustum culling + contiguous merge ──────────────────────
+    if (mg_multidraw_fast_elements_bv(mode, counts, type, indices, primcount, basevertex)) return;
+
     static glMultiDrawElementsBaseVertex_t func_ptr = nullptr;
 
     if (func_ptr == nullptr) {
@@ -1907,6 +1916,9 @@ void mg_glMultiDrawArrays_multiindirect(GLenum mode, const GLint* first, const G
 typedef void (*glMultiDrawArrays_t)(GLenum, const GLint*, const GLsizei*, GLsizei);
 
 void glMultiDrawArrays(GLenum mode, const GLint* first, const GLsizei* count, GLsizei drawcount) {
+    // ── FAST PATH: contiguous merge ─────────────────────────────────────────
+    if (mg_multidraw_fast_arrays(mode, first, count, drawcount)) return;
+
     static glMultiDrawArrays_t func_ptr = nullptr;
 
     if (func_ptr == nullptr) {

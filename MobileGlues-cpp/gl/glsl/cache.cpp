@@ -223,7 +223,7 @@ void Cache::flushIfDue() {
 }
 
 const char* Cache::get(const char* glsl) {
-    if (global_settings.max_glsl_cache_size <= 0) return nullptr;
+    if (global_settings.max_shader_cache_size <= 0) return nullptr;
     flushIfDue();
 
     const size_t length = strlen(glsl);
@@ -244,7 +244,7 @@ const char* Cache::get(const char* glsl) {
 }
 
 void Cache::put(const char* glsl, const char* essl) {
-    if (global_settings.max_glsl_cache_size <= 0) return;
+    if (global_settings.max_shader_cache_size <= 0) return;
 
     const size_t length = strlen(glsl);
     array<uint8_t, 32> hash;
@@ -274,8 +274,8 @@ void Cache::put(const char* glsl, const char* essl) {
 }
 
 void Cache::maintainCacheSize() {
-    if (global_settings.max_glsl_cache_size <= 0) return;
-    while (cacheSize > global_settings.max_glsl_cache_size && !cacheList.empty()) {
+    if (global_settings.max_shader_cache_size <= 0) return;
+    while (cacheSize > global_settings.max_shader_cache_size && !cacheList.empty()) {
         const auto& oldEntry = cacheList.front();
         size_t removedMemory = sizeof(CacheEntry::sha256) + sizeof(size_t) + oldEntry.size;
         cacheSize -= removedMemory;
@@ -328,7 +328,7 @@ bool Cache::load() {
 }
 
 void Cache::save() {
-    if (global_settings.max_glsl_cache_size <= 0) return;
+    if (global_settings.max_shader_cache_size <= 0) return;
     if (!glsl_cache_file_path) return;
 
     // Cleared before the attempt, not after it. save() serialises the whole list

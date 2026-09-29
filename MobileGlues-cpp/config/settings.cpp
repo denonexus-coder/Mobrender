@@ -26,7 +26,7 @@ void init_settings() {
     global_settings.angle_supported = false;
     global_settings.ignore_error = IgnoreErrorLevel::Partial;
     global_settings.ext_compute_shader = false;
-    global_settings.max_glsl_cache_size = 30 * 1024 * 1024;
+    global_settings.max_shader_cache_size = 30 * 1024 * 1024;
     global_settings.angle_depth_clear_fix_mode = AngleDepthClearFixMode::Disabled;
     global_settings.ext_direct_state_access = true;
     global_settings.custom_gl_version = {0, 0, 0}; // will go default
@@ -63,9 +63,9 @@ void init_settings() {
         customGLVersionInt = 0;
     }
 
-    size_t maxGlslCacheSize = 0;
-    if (config_get_int("maxGlslCacheSize") > 0) {
-        maxGlslCacheSize = success ? config_get_int("maxGlslCacheSize") * 1024 * 1024 : 0;
+    size_t maxShaderCacheSize = 0;
+    if (config_get_int("maxShaderCacheSize") > 0) {
+        maxShaderCacheSize = success ? config_get_int("maxShaderCacheSize") * 1024 * 1024 : 0;
     }
 
     // config_get_int returns -1 for a key that is absent, so a config.json written
@@ -131,7 +131,7 @@ void init_settings() {
         enableExtComputeShader = false;
         enableExtTimerQuery = true;
         enableExtDirectStateAccess = true;
-        maxGlslCacheSize = 0;
+        maxShaderCacheSize = 0;
         angleDepthClearFixMode = AngleDepthClearFixMode::Disabled;
         fsr1Setting = FSR1_Quality_Preset::Disabled;
         hideMGEnvLevel = HideMGEnvLevel::Disabled;
@@ -212,7 +212,7 @@ void init_settings() {
     global_settings.ext_compute_shader = enableExtComputeShader;
     global_settings.ext_timer_query = enableExtTimerQuery;
     global_settings.ext_direct_state_access = enableExtDirectStateAccess;
-    global_settings.max_glsl_cache_size = maxGlslCacheSize;
+    global_settings.max_shader_cache_size = maxShaderCacheSize;
     global_settings.angle_depth_clear_fix_mode = angleDepthClearFixMode;
     global_settings.custom_gl_version = customGLVersion;
     global_settings.fsr1_setting = fsr1Setting;
@@ -227,8 +227,8 @@ void init_settings() {
     LOG_V("[MobileGlues] Setting: enableExtTimerQuery         = %s", global_settings.ext_timer_query ? "true" : "false")
     LOG_V("[MobileGlues] Setting: enableExtDirectStateAccess  = %s",
           global_settings.ext_direct_state_access ? "true" : "false")
-    LOG_V("[MobileGlues] Setting: maxGlslCacheSize            = %i",
-          static_cast<int>(global_settings.max_glsl_cache_size / 1024 / 1024))
+    LOG_V("[MobileGlues] Setting: maxShaderCacheSize            = %i",
+          static_cast<int>(global_settings.max_shader_cache_size / 1024 / 1024))
     LOG_V("[MobileGlues] Setting: angleDepthClearFixMode      = %i",
           static_cast<int>(global_settings.angle_depth_clear_fix_mode))
     LOG_V("[MobileGlues] Setting: bufferCoherentAsFlush       = %i",
@@ -698,7 +698,7 @@ std::string dump_settings_string(std::string prefix) {
     ss << prefix << "ExtComputeShader: " << (global_settings.ext_compute_shader ? "True" : "False") << "\n";
     ss << prefix << "ExtTimerQuery: " << (global_settings.ext_timer_query ? "True" : "False") << "\n";
     ss << prefix << "ExtDirectStateAccess: " << (global_settings.ext_direct_state_access ? "True" : "False") << "\n";
-    ss << prefix << "MaxGlslCacheSize: " << (global_settings.max_glsl_cache_size / 1024 / 1024) << "MB\n";
+    ss << prefix << "MaxShaderCacheSize: " << (global_settings.max_shader_cache_size / 1024 / 1024) << "MB\n";
 
     for (int i = 0; i < MD_ENTRY_COUNT; ++i) {
         ss << prefix << k_md_entries[i].order_key << ": ";

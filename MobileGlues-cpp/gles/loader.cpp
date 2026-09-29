@@ -150,7 +150,27 @@ void load_libs() {
 }
 
 void* proc_address(void* lib, const char* name) {
-    return dlsym(lib, name);
+    void* sym = dlsym(lib, name);
+    if (sym) return sym;
+
+    // Extensoes nao estao na tabela de simbolos do .so do driver.
+    // A PowerVR expoe GL_EXT_buffer_storage no extension string mas
+    // dlsym("glBufferStorageEXT") retorna NULL. eglGetProcAddress e o
+    // caminho oficial do EGL pra pegar entry points de extensao.
+    if (eglGetProcAddress) {
+        sym = (void*)eglGetProcAddress(name);
+        if (sym) {
+            LOG_W_FORCE("[proc_address] %s resolvido via eglGetProcAddress -> %p",
+                        name, sym);
+        } else {
+            LOG_W_FORCE("[proc_address] %s NAO resolvido (dlsym+egl ambos NULL)",
+                        name);
+        }
+    } else {
+        LOG_W_FORCE("[proc_address] %s falhou: eglGetProcAddress indisponivel",
+                    name);
+    }
+    return sym;
 }
 
 void set_hardware() {
