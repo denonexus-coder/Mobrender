@@ -14,6 +14,7 @@ extern "C"
 
     extern char* mg_directory_path;
     extern char* config_file_path;
+    extern char* draw_config_file_path;
     extern char* log_file_path;
     extern char* glsl_cache_file_path;
 
