@@ -214,6 +214,26 @@ extern "C"
         int GL_EXT_sRGB_write_control;       // GL_FRAMEBUFFER_SRGB
         int GL_NV_polygon_mode;              // GL_POLYGON_OFFSET_LINE / _POINT
         int GL_OES_sample_shading;           // GL_SAMPLE_SHADING before ES 3.2
+        // Extensions added for capability-driven ARB exposure (gl/getter.cpp).
+        // Names prefixed mg_ where the bare name collides with a glext.h macro.
+        int GL_EXT_clear_texture;
+        int GL_EXT_clip_control;
+        int GL_EXT_texture_border_clamp;
+        int GL_OES_texture_border_clamp;
+        int GL_EXT_texture_buffer;
+        int GL_OES_texture_buffer;
+        int GL_OES_get_program_binary;
+        int GL_IMG_program_binary;
+        int GL_EXT_draw_buffers_indexed;
+        int GL_OES_draw_buffers_indexed;
+        int mg_GL_EXT_robustness;            // avoids clash with glext.h constant
+        int mg_GL_KHR_debug;                 // avoids clash with glext.h constant
+        int GL_OES_texture_storage_multisample_2d_array;
+        int GL_EXT_occlusion_query_boolean;
+        int GL_EXT_tessellation_shader;
+        int GL_OES_tessellation_shader;
+        int GL_EXT_geometry_shader;
+        int GL_OES_geometry_shader;
         // GL_EXT_multi_draw_arrays deliberately absent: glext.h defines a macro of
         // that exact name, and gl/multidraw.cpp already probes it lazily because it
         // needs the entry points as well as the string.

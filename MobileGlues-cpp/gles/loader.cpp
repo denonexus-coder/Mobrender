@@ -1,4 +1,6 @@
 // MobileGlues - gles/loader.cpp
+#include "../gl/mg_buffer_storage.h"
+#include "../gl/mg_buffer_dispatch.h"
 // Copyright (c) 2025-2026 MobileGL-Dev
 // Licensed under the GNU Lesser General Public License v2.1:
 //   https://www.gnu.org/licenses/old-licenses/lgpl-2.1.txt
@@ -273,6 +275,45 @@ void InitGLESCapabilities() {
                 g_gles_caps.GL_NV_polygon_mode = 1;
             } else if (strcmp(extension, "GL_OES_sample_shading") == 0) {
                 g_gles_caps.GL_OES_sample_shading = 1;
+            } else if (strcmp(extension, "GL_EXT_clear_texture") == 0) {
+                g_gles_caps.GL_EXT_clear_texture = 1;
+            } else if (strcmp(extension, "GL_EXT_clip_control") == 0) {
+                g_gles_caps.GL_EXT_clip_control = 1;
+            } else if (strcmp(extension, "GL_EXT_texture_border_clamp") == 0) {
+                g_gles_caps.GL_EXT_texture_border_clamp = 1;
+            } else if (strcmp(extension, "GL_OES_texture_border_clamp") == 0) {
+                g_gles_caps.GL_OES_texture_border_clamp = 1;
+            } else if (strcmp(extension, "GL_EXT_texture_buffer") == 0) {
+                g_gles_caps.GL_EXT_texture_buffer = 1;
+            } else if (strcmp(extension, "GL_OES_texture_buffer") == 0) {
+                g_gles_caps.GL_OES_texture_buffer = 1;
+            } else if (strcmp(extension, "GL_OES_get_program_binary") == 0) {
+                g_gles_caps.GL_OES_get_program_binary = 1;
+            } else if (strcmp(extension, "GL_IMG_program_binary") == 0) {
+                g_gles_caps.GL_IMG_program_binary = 1;
+            } else if (strcmp(extension, "GL_EXT_draw_buffers_indexed") == 0) {
+                g_gles_caps.GL_EXT_draw_buffers_indexed = 1;
+            } else if (strcmp(extension, "GL_OES_draw_buffers_indexed") == 0) {
+                g_gles_caps.GL_OES_draw_buffers_indexed = 1;
+            } else if (strcmp(extension, "GL_EXT_robustness") == 0) {
+                g_gles_caps.mg_GL_EXT_robustness = 1;
+            } else if (strcmp(extension, "GL_KHR_robustness") == 0) {
+                // bare name is a glext.h macro = 1; stored under mg_ prefix
+                g_gles_caps.mg_GL_EXT_robustness = 1; // treat KHR same as EXT
+            } else if (strcmp(extension, "GL_KHR_debug") == 0) {
+                g_gles_caps.mg_GL_KHR_debug = 1;
+            } else if (strcmp(extension, "GL_OES_texture_storage_multisample_2d_array") == 0) {
+                g_gles_caps.GL_OES_texture_storage_multisample_2d_array = 1;
+            } else if (strcmp(extension, "GL_EXT_occlusion_query_boolean") == 0) {
+                g_gles_caps.GL_EXT_occlusion_query_boolean = 1;
+            } else if (strcmp(extension, "GL_EXT_tessellation_shader") == 0) {
+                g_gles_caps.GL_EXT_tessellation_shader = 1;
+            } else if (strcmp(extension, "GL_OES_tessellation_shader") == 0) {
+                g_gles_caps.GL_OES_tessellation_shader = 1;
+            } else if (strcmp(extension, "GL_EXT_geometry_shader") == 0) {
+                g_gles_caps.GL_EXT_geometry_shader = 1;
+            } else if (strcmp(extension, "GL_OES_geometry_shader") == 0) {
+                g_gles_caps.GL_OES_geometry_shader = 1;
             }
         } else {
             LOG_D("(nullptr)")
@@ -682,6 +723,12 @@ void init_target_gles() {
     INIT_GLES_FUNC(glTexStorage3DMultisample)
     INIT_GLES_FUNC(glMapBufferRange)
     INIT_GLES_FUNC(glBufferStorageEXT)
+    INIT_GLES_FUNC(glClearTexImageEXT)
+    INIT_GLES_FUNC(glClearTexSubImageEXT)
+    INIT_GLES_FUNC(glClipControlEXT)
+    INIT_GLES_FUNC(glTexBufferEXT)
+    INIT_GLES_FUNC(glMinSampleShadingOES)
+    INIT_GLES_FUNC(glShaderStorageBlockBinding)
     INIT_GLES_FUNC(glGetQueryObjectivEXT)
     INIT_GLES_FUNC(glGetQueryObjecti64vEXT)
     INIT_GLES_FUNC(glBindFragDataLocationEXT)
@@ -715,5 +762,27 @@ void init_target_gles() {
         } else {
             g_gles_func.glDrawElementsBaseVertex = nullptr;
         }
+    }
+
+    // Bootstrap mg_buffer_storage dispatch (ARB->EXT layer)
+    {
+        MGBufferDispatch d;
+        memset(&d, 0, sizeof(d));
+        d.BufferStorageEXT        = (MGPFN_BufferStorageEXT)       GLES.glBufferStorageEXT;
+        d.MapBufferRange          = (MGPFN_MapBufferRange)         GLES.glMapBufferRange;
+        d.FlushMappedBufferRange  = (MGPFN_FlushMappedBufferRange) GLES.glFlushMappedBufferRange;
+        d.UnmapBuffer             = (MGPFN_UnmapBuffer)            GLES.glUnmapBuffer;
+        d.BindBuffer              = (MGPFN_BindBuffer)             GLES.glBindBuffer;
+        d.GenBuffers              = (MGPFN_GenBuffers)             GLES.glGenBuffers;
+        d.DeleteBuffers           = (MGPFN_DeleteBuffers)          GLES.glDeleteBuffers;
+        d.CopyBufferSubData       = (MGPFN_CopyBufferSubData)      GLES.glCopyBufferSubData;
+        d.BufferSubData           = (MGPFN_BufferSubData)           GLES.glBufferSubData;
+        d.FenceSync               = (MGPFN_FenceSync)              GLES.glFenceSync;
+        d.ClientWaitSync          = (MGPFN_ClientWaitSync)         GLES.glClientWaitSync;
+        d.DeleteSync              = (MGPFN_DeleteSync)             GLES.glDeleteSync;
+        d.GetError                = (MGPFN_GetError)               GLES.glGetError;
+        d.Finish                  = (MGPFN_Finish)                 GLES.glFinish;
+        mg_bs_set_dispatch(&d);
+        mg_bs_init(nullptr);
     }
 }

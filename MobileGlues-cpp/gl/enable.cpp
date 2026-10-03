@@ -615,6 +615,10 @@ extern "C"
             *data = static_cast<GLfloat>(ival);
             return;
         }
+        if (pname == 0x84FF /* GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT */) {
+            *data = 1.0f;
+            return;
+        }
         GLES.glGetFloatv(pname, data);
     }
 

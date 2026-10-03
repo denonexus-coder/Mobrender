@@ -12,6 +12,8 @@
 #include <ska/flat_hash_map.hpp>
 #include <array>
 #include "texture.h"
+#include "mg_buffer_storage.h"
+#include "mg_buffer_storage_flags.h"
 
 #define DEBUG 0
 
@@ -489,6 +491,7 @@ void glDeleteBuffers(GLsizei n, const GLuint* buffers) {
         }
         if (find_real_buffer(buffers[i])) {
             GLuint real_buff = find_real_buffer(buffers[i]);
+            mg_bs_delete(buffers[i]);   // solta o mapeamento persistente / metadados
             GLES.glDeleteBuffers(1, &real_buff);
             CHECK_GL_ERROR
         }
@@ -1090,7 +1093,12 @@ extern "C"
 void* glMapBufferRange(GLenum target, GLintptr offset, GLsizeiptr length, GLbitfield access) {
     LOG()
     if (global_settings.buffer_coherent_as_flush) access &= ~GL_MAP_FLUSH_EXPLICIT_BIT;
-    //    access |= GL_MAP_UNSYNCHRONIZED_BIT;
+
+    const GLuint app_name = find_bound_buffer_by_target(target);
+    bool handled = false;
+    void* p = mg_bs_map_buffer_range(target, app_name, offset, length, access, &handled);
+    if (handled) return p;   // persistente: devolve o ponteiro guardado, sem remap
+
     borrowed_target_t t(target);
     return GLES.glMapBufferRange(t.target, offset, length, access);
 }
@@ -1098,33 +1106,70 @@ void* glMapBufferRange(GLenum target, GLintptr offset, GLsizeiptr length, GLbitf
 GLboolean glUnmapBuffer(GLenum target) {
     LOG()
     LOG_D("%s(%s)", __func__, glEnumToString(target));
+    const GLuint app_name = find_bound_buffer_by_target(target);
+    bool result = false;
+    if (mg_bs_unmap(target, app_name, &result)) return result ? GL_TRUE : GL_FALSE;
+
     borrowed_target_t t(target);
     if (g_gles_caps.GL_OES_mapbuffer) return GLES.glUnmapBuffer(t.target);
-
-    GLboolean result = GLES.glUnmapBuffer(t.target);
+    GLboolean r = GLES.glUnmapBuffer(t.target);
     CHECK_GL_ERROR
-    return result;
+    return r;
 }
 
+// ---------------------------------------------------------------------------
+// glBufferStorage (GL_ARB_buffer_storage) → glBufferStorageEXT (GL_EXT_buffer_storage)
+//
+// A tradução de flags é explícita via translateStorageFlagsARBtoEXT; nunca
+// flagsEXT = flagsARB. O frontend anuncia GL_ARB_buffer_storage; internamente
+// usa sempre GL_EXT_buffer_storage com tradução optimizada para o GE8320.
+// ---------------------------------------------------------------------------
 void glBufferStorage(GLenum target, GLsizeiptr size, const void* data, GLbitfield flags) {
     LOG()
-    if (GLES.glBufferStorageEXT) {
-        if (global_settings.buffer_coherent_as_flush &&
-            ((flags & GL_MAP_PERSISTENT_BIT) != 0 || (flags & GL_DYNAMIC_STORAGE_BIT) != 0))
-            flags |= (GL_MAP_WRITE_BIT | GL_MAP_COHERENT_BIT | GL_MAP_PERSISTENT_BIT);
-        borrowed_target_t t(target);
-        GLES.glBufferStorageEXT(t.target, size, data, flags);
-        // Allocates storage just as glBufferData does, so it owes the same record.
-        set_buffer_data_size(find_bound_buffer_by_target(target), size);
+    if (!GLES.glBufferStorageEXT) {
+        MG_WARN_ONCE("glBufferStorage: GL_EXT_buffer_storage ausente — usando glBufferData (fallback)");
+        glBufferData(target, size, data, GL_STATIC_DRAW);
+        // CORREÇÃO 3: regista o buffer do fallback para que o map persistente
+        // subsequente seja servido pelo shadow CPU e não devolva NULL ao Sodium.
+        mg_bs_register_fallback(find_bound_buffer_by_target(target), size);
+        return;
     }
+
+    const GLuint app_name   = find_bound_buffer_by_target(target);
+    const GLuint driver_buf = mg_driver_bound_buffer(target);
+    if (app_name != 0) set_buffer_data_size(app_name, size);
+
+    // CORREÇÃO 1: data vai directamente no StorageEXT. Buffers imutáveis sem
+    // GL_DYNAMIC_STORAGE_BIT rejeitam glBufferSubData com GL_INVALID_OPERATION.
+    if (mg_bs_buffer_storage(target, app_name, driver_buf, size, flags, data)) {
+        CHECK_GL_ERROR
+        return;
+    }
+
+    // Backend fora (bench BASELINE etc.): traduz explicitamente e passa directo.
+    uint32_t dropped = 0;
+    GLbitfield ext = (GLbitfield)translateStorageFlagsARBtoEXT(flags, &dropped);
+    GLES.glBufferStorageEXT(target, size, data, ext);
     CHECK_GL_ERROR
 }
 
 void glFlushMappedBufferRange(GLenum target, GLintptr offset, GLsizeiptr length) {
     LOG()
-    if (!global_settings.buffer_coherent_as_flush) {
-        borrowed_target_t t(target);
-        GLES.glFlushMappedBufferRange(t.target, offset, length);
+    if (global_settings.buffer_coherent_as_flush) return;
+    const GLuint app_name = find_bound_buffer_by_target(target);
+    if (mg_bs_flush_mapped_range(target, app_name, offset, length)) return;
+    borrowed_target_t t(target);
+    GLES.glFlushMappedBufferRange(t.target, offset, length);
+}
+
+void glClearBufferSubData(GLenum target, GLenum internalformat, GLintptr offset, GLsizeiptr size, GLenum format, GLenum type, const void* data) {
+    LOG()
+    // Iris calls this primarily to clear SSBOs with zeroes. In GLES 3.1, this is missing.
+    // We map the buffer, zero it out, and unmap it. This is fast on UMA mobile architectures.
+    void* ptr = GLES.glMapBufferRange(target, offset, size, GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_RANGE_BIT);
+    if (ptr) {
+        memset(ptr, 0, size);
+        GLES.glUnmapBuffer(target);
     }
 }
 

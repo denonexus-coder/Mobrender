@@ -56,48 +56,78 @@ bool check_if_sampler_buffer_used(std::string str) {
     return str.find("samplerBuffer") != std::string::npos;
 }
 
-static std::once_flag g_cache_init_flag;
-
-
-#include "mg_shader_cache.h"
-#include <mutex>
-
-
 void glShaderSource(GLuint shader, GLsizei count, const GLchar* const* string, const GLint* length) {
-    std::call_once(g_cache_init_flag, []{
-        mg_init_shader_cache();
-    });
     LOG()
-    
+    shaderInfo.id = 0;
+    shaderInfo.converted = "";
+    shaderInfo.frag_data_changed_converted.clear();
+    shaderInfo.frag_data_changed = 0;
     size_t l = 0;
     for (int i = 0; i < count; i++)
         l += (length && length[i] >= 0) ? length[i] : strlen(string[i]);
-    std::string glsl_src;
+    std::string glsl_src, essl_src;
     glsl_src.reserve(l + 1);
     if (length) {
         for (int i = 0; i < count; i++) {
-            if (length[i] >= 0) glsl_src += std::string_view(string[i], length[i]);
-            else glsl_src += string[i];
+            if (length[i] >= 0)
+                glsl_src += std::string_view(string[i], length[i]);
+            else
+                glsl_src += string[i];
         }
     } else {
-        for (int i = 0; i < count; i++) glsl_src += string[i];
-    }
-    
-    GLint shaderType = 0;
-    GLES.glGetShaderiv(shader, GL_SHADER_TYPE, &shaderType);
-    mg_cache_register_glsl(shader, shaderType, glsl_src);
-    
-    // PROTEJA O glShaderSource()
-    // Impedir que o GLSL desktop alcance o driver prematuramente
-    if (glsl_src.find("#version 330") != std::string::npos || !is_direct_shader(glsl_src.c_str())) {
-        LOG_E("[MGShaderCache] PROTECT: Impedindo GLSL 330 de chegar ao driver. Traducao movida para glLinkProgram.");
-        const char* dummy = "#version 320 es\nvoid main() {}";
-        GLES.glShaderSource(shader, 1, &dummy, nullptr);
-        CHECK_GL_ERROR
-        return;
+        for (int i = 0; i < count; i++) {
+            glsl_src += string[i];
+        }
     }
 
-    GLES.glShaderSource(shader, count, string, length);
+    bool is_sampler_buffer_emulated = hardware->emulate_texture_buffer && check_if_sampler_buffer_used(glsl_src);
+
+    if (is_direct_shader(glsl_src.c_str())) {
+        LOG_D("[INFO] [Shader] Direct shader source: ")
+        LOG_D("%s", glsl_src.c_str())
+        essl_src = glsl_src;
+    } else {
+        int glsl_version = getGLSLVersion(glsl_src.c_str());
+        LOG_D("[INFO] [Shader] Shader source: ")
+        LOG_D("%s", glsl_src.c_str())
+        GLint shaderType;
+        GLES.glGetShaderiv(shader, GL_SHADER_TYPE, &shaderType);
+        int return_code = 0;
+        essl_src = GLSLtoGLSLES(glsl_src.c_str(), shaderType, hardware->es_version, glsl_version, return_code);
+
+        if (essl_src.empty()) {
+            LOG_E("Failed to convert shader %d.", shader)
+            return;
+        }
+        LOG_D("\n[INFO] [Shader] Converted Shader source: \n%s", essl_src.c_str())
+    }
+    if (!essl_src.empty()) {
+        shaderInfo.id = shader;
+        shaderInfo.converted = essl_src;
+
+        // Get the shader type for cache storage
+        GLint shaderType = 0;
+        GLES.glGetShaderiv(shader, GL_SHADER_TYPE, &shaderType);
+
+        // Store ESSL (not GLSL) in the cache, keyed by shader ID + type.
+        // This is the only place where cache is populated — glCompileShader
+        // does NOT convert and does NOT touch the cache.
+        mg_shader_cache_save_essl(shader, static_cast<GLenum>(shaderType), essl_src);
+
+        const char* s[] = {essl_src.c_str()};
+        GLES.glShaderSource(shader, 1, s, nullptr);
+        if (hardware->emulate_texture_buffer)
+            shader_map_is_sampler_buffer_emulated[shader] = is_sampler_buffer_emulated;
+    } else
+        LOG_E("Failed to convert glsl.")
+    CHECK_GL_ERROR
+}
+
+void glCompileShader(GLuint shader) {
+    LOG()
+    // ESSL was already set via GLES.glShaderSource in glShaderSource().
+    // No conversion here — just compile what the driver already has.
+    GLES.glCompileShader(shader);
     CHECK_GL_ERROR
 }
 

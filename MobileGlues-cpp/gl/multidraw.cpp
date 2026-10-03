@@ -7,6 +7,8 @@
 
 #include "multidraw.h"
 #include "multidraw_fast.hpp"
+#include "multidraw_sodium_decl.hpp"
+#include "multidraw_funnel.h"
 #include "../config/settings.h"
 #include "buffer.h"
 #include "enable.h"
@@ -358,6 +360,7 @@ static void multidraw_check_context() {
     // real driver name rather than a virtual one, so it has exactly the same
     // cross-context reuse hazard.
     mg_restart_invalidate();
+    mg_multidraw_sodium_invalidate();
     g_compute_inited = false;
     // The failure latches are per-context capability facts, so they are cleared
     // together with the objects they describe. Clearing a probe latch also has
@@ -622,6 +625,15 @@ typedef void (*glMultiDrawElementsBaseVertex_t)(GLenum, GLsizei*, GLenum, const 
 
 void glMultiDrawElementsBaseVertex(GLenum mode, GLsizei* counts, GLenum type, const void* const* indices,
                                    GLsizei primcount, const GLint* basevertex) {
+    // ── SODIUM DIRECT PATH: shared-IBO shape -> one EXT call ──────────────
+    if (mg_multidraw_sodium_bv(mode, counts, type, indices, primcount, basevertex)) return;
+
+    // ── FUNNEL ENGINE: merge contiguous base-vertex runs into few driver calls ──
+    // Measured on GE8320 with real chunk data: 7.2x submission, 1.26x FPS.
+    // Returns false for any batch it cannot serve, leaving every backend below
+    // exactly as it was.
+    if (mg_multidraw_funnel_elements_bv(mode, counts, type, indices, primcount, basevertex)) return;
+
     // ── FAST PATH: frustum culling + contiguous merge ──────────────────────
     if (mg_multidraw_fast_elements_bv(mode, counts, type, indices, primcount, basevertex)) return;
 

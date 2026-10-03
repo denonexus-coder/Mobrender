@@ -137,6 +137,15 @@ void log_unique_function(const char* func_name);
         write_log(__VA_ARGS__);                                                                                        \
     }
 
+#define MG_WARN_ONCE(...)                                                                        \
+    do {                                                                                         \
+        static bool mg_warned_##__LINE__ = false;                                                \
+        if (!mg_warned_##__LINE__) {                                                             \
+            mg_warned_##__LINE__ = true;                                                         \
+            LOG_W_FORCE(__VA_ARGS__)                                                             \
+        }                                                                                        \
+    } while (0)
+
 #define MOBILEGLUES_LOG_H
 
 #endif // MOBILEGLUES_LOG_H

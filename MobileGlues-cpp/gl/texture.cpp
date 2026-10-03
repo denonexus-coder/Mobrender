@@ -824,6 +824,11 @@ void glTexParameterf(GLenum target, GLenum pname, GLfloat param) {
         return;
     }
 
+    if (pname == 0x84FE /* GL_TEXTURE_MAX_ANISOTROPY_EXT */) {
+        // Ignora amigavelmente. A PVR faz trilinear, reportamos max=1.
+        return;
+    }
+
     GLES.glTexParameterf(target, pname, param);
     CHECK_GL_ERROR
 }
@@ -842,40 +847,9 @@ void glTexParameterf(GLenum target, GLenum pname, GLfloat param) {
 void glTexImage1D(GLenum target, GLint level, GLint internalFormat, GLsizei width, GLint border, GLenum format,
                   GLenum type, const GLvoid* pixels) {
     LOG()
-    LOG_D("glTexImage1D not implemented!")
-    // Not implemented: no GLES storage call is ever issued, only the shadow
-    // TextureObject fields below get written. That used to be a LOG_D and
-    // nothing else -- invisible in a release build, and with glGetError
-    // answering GL_NO_ERROR the application had every reason to believe its
-    // level existed. Sampling it reads an incomplete texture instead.
-    mg_set_gl_error(GL_INVALID_OPERATION);
-    LOG_D("glTexImage1D, target: %d, level: %d, internalFormat: %d, width: %d, "
-          "border: %d, format: %d, type: %d",
-          target, level, internalFormat, width, border, format, type)
-    internal_convert(reinterpret_cast<GLenum*>(&internalFormat), &type, &format, mg_upload_has_data(pixels));
-
-    GLenum rtarget = map_tex_target(target);
-    if (rtarget == GL_PROXY_TEXTURE_1D) {
-        int max1 = 4096;
-        GLES.glGetIntegerv(GL_MAX_TEXTURE_SIZE, &max1);
-        set_gl_state_proxy_width(((width << level) > max1) ? 0 : width);
-        set_gl_state_proxy_intformat(internalFormat);
-        return;
-    }
-
-    GET_TEXTURE_OBJECT(target);
-    tex->target = ConvertGLEnumToTextureTarget(target);
-    tex->depth = 1;
-    tex->format = format;
-    tex->internal_format = internalFormat;
-    tex->width = width;
-    tex->height = 1;
-    tex->swizzle_param[0] = GL_RED;
-    tex->swizzle_param[1] = GL_GREEN;
-    tex->swizzle_param[2] = GL_BLUE;
-    tex->swizzle_param[3] = GL_ALPHA;
-
-    CHECK_GL_ERROR
+    GLenum rtarget = target == GL_TEXTURE_1D ? GL_TEXTURE_2D : target;
+    // Promove a textura 1D para uma textura 2D de altura 1
+    glTexImage2D(rtarget, level, internalFormat, width, 1, border, format, type, pixels);
 }
 
 void glTexImage2D(GLenum target, GLint level, GLint internalFormat, GLsizei width, GLsizei height, GLint border,

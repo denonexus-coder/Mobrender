@@ -553,3 +553,10 @@ void glDrawElementsInstancedBaseVertexBaseInstance(GLenum mode, GLsizei count, G
     }
     glDrawElementsInstancedBaseVertex(mode, count, type, indices, instancecount, basevertex);
 }
+
+void glPolygonMode(GLenum face, GLenum mode) {
+    LOG()
+    LOG_D("glPolygonMode, face: %s, mode: %s", glEnumToString(face), glEnumToString(mode))
+    // Iris calls this when a shaderpack requests wireframe mode. GLES does not support it.
+    DR_WARN_ONCE("glPolygonMode ignored (wireframe is not supported in GLES)");
+}

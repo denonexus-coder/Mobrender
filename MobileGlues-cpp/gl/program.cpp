@@ -48,9 +48,6 @@ std::string updateLayoutLocation(const std::string& esslSource, GLuint color, co
     return modifiedCode;
 }
 
-struct FragBinding { GLuint color; std::string name; };
-static UnorderedMap<GLuint, std::vector<FragBinding>> g_frag_bindings;
-
 void glBindFragDataLocation(GLuint program, GLuint color, const GLchar* name) {
     LOG()
     LOG_D("glBindFragDataLocation(%d, %d, %s)", program, color, name)
@@ -68,13 +65,20 @@ void glBindFragDataLocation(GLuint program, GLuint color, const GLchar* name) {
         if (isNumber) {
             unsigned int extractedColor = static_cast<unsigned int>(std::stoul(numberStr));
             if (extractedColor == color) {
+                // outColor was bound in glsl process. exit now
                 LOG_D("Find outColor* with color *, skipping")
                 return;
             }
         }
     }
 
-    g_frag_bindings[program].push_back({color, std::string(name)});
+    // Copied before the call, not aliased into it: the result is assigned back
+    // over the same member that supplies the input.
+    const std::string origin_glsl =
+        shaderInfo.frag_data_changed ? shaderInfo.frag_data_changed_converted : shaderInfo.converted;
+
+    shaderInfo.frag_data_changed_converted = updateLayoutLocation(origin_glsl, color, name);
+    shaderInfo.frag_data_changed = 1;
 }
 
 static std::string DefaultFSSource;
@@ -96,103 +100,126 @@ void GenerateDefaultFSSource() {
 }
 
 static UnorderedMap<unsigned, GLuint> DefaultFSMap; // essl version <-> shader id
+
 void glLinkProgram(GLuint program) {
     LOG()
+
     LOG_D("glLinkProgram(%d)", program)
 
-    // ── V2 Cache: L0 / disk lookup ──────────────────────────────────────────
-    // Try to get previously cached ESSL for this vertex+fragment pair.
-    // On HIT we skip GLSL→SPIR-V→SPIRV-Cross entirely.
-    {
-        std::string v_essl, f_essl;
-        if (mg_cache_lookup_program(program, v_essl, f_essl)) {
-            // Apply the cached ESSL directly to the driver shaders
-            // We need to find the shader IDs attached to this program
-            GLint attached_count = 0;
-            GLES.glGetProgramiv(program, GL_ATTACHED_SHADERS, &attached_count);
-            if (attached_count >= 2) {
-                std::vector<GLuint> attached(attached_count);
-                GLES.glGetAttachedShaders(program, attached_count, nullptr, attached.data());
-                for (GLuint sh : attached) {
-                    GLint type = 0;
-                    GLES.glGetShaderiv(sh, GL_SHADER_TYPE, &type);
-                    if (type == GL_VERTEX_SHADER) {
-                        const char* src = v_essl.c_str();
-                        GLES.glShaderSource(sh, 1, &src, nullptr);
-                        GLES.glCompileShader(sh);
-                    } else if (type == GL_FRAGMENT_SHADER) {
-                        const char* src = f_essl.c_str();
-                        GLES.glShaderSource(sh, 1, &src, nullptr);
-                        GLES.glCompileShader(sh);
-                    }
-                }
-                // Clear legacy shaderInfo state (it's been superseded by cache)
-                shaderInfo.id = 0;
-                shaderInfo.converted = "";
-                shaderInfo.frag_data_changed_converted.clear();
-                shaderInfo.frag_data_changed = 0;
-                GLES.glLinkProgram(program);
-                CHECK_GL_ERROR
-                return;
-            }
-            // Fallthrough: not enough attached shaders, do normal pipeline
+    // ── glBindFragDataLocation patch ────────────────────────────────────────
+    // If glBindFragDataLocation modified the fragment shader ESSL, re-submit
+    // the patched source to the driver before linking.
+    // Note: shaderInfo.id is the last shader touched by glShaderSource.
+    if (!shaderInfo.converted.empty() && shaderInfo.frag_data_changed) {
+        const GLchar* patched = shaderInfo.frag_data_changed_converted.c_str();
+        GLES.glShaderSource(shaderInfo.id, 1, &patched, nullptr);
+        GLES.glCompileShader(shaderInfo.id);
+        GLint status = 0;
+        GLES.glGetShaderiv(shaderInfo.id, GL_COMPILE_STATUS, &status);
+        if (status != GL_TRUE) {
+            char tmp[500];
+            GLES.glGetShaderInfoLog(shaderInfo.id, 500, nullptr, tmp);
+            LOG_E("Failed to compile patched shader, log:\n%s", tmp)
         }
+        GLES.glDetachShader(program, shaderInfo.id);
+        GLES.glAttachShader(program, shaderInfo.id);
+        CHECK_GL_ERROR
+
+        // Update the ESSL stored in cache for this shader to reflect the
+        // patched version (with the corrected frag data location).
+        // This ensures the pair cache uses the final ESSL, not the pre-patch version.
+        GLint shaderType = 0;
+        GLES.glGetShaderiv(shaderInfo.id, GL_SHADER_TYPE, &shaderType);
+        mg_shader_cache_save_essl(shaderInfo.id,
+                                  static_cast<GLenum>(shaderType),
+                                  shaderInfo.frag_data_changed_converted);
     }
-    // ── End V2 Cache lookup ─────────────────────────────────────────────────
-
-    // MISS path: Executar o pipeline de traducao (GLSL -> SPIRV -> SPIRV-Cross -> ESSL)
-    LOG_D("[MGShaderCache][TRACE] program=%u cache=MISS", program);
-    std::string captured_v_essl, captured_f_essl;
-    
-    GLint attached_count = 0;
-    GLES.glGetProgramiv(program, GL_ATTACHED_SHADERS, &attached_count);
-    if (attached_count > 0) {
-        std::vector<GLuint> attached(attached_count);
-        GLES.glGetAttachedShaders(program, attached_count, nullptr, attached.data());
-        for (GLuint sh : attached) {
-            GLint type = 0;
-            GLES.glGetShaderiv(sh, GL_SHADER_TYPE, &type);
-            
-            std::string raw_glsl = mg_cache_get_glsl(sh);
-            if (raw_glsl.empty()) continue;
-
-            if (!is_direct_shader(raw_glsl.c_str())) {
-                LOG_D("[MGShaderCache][TRACE] stage=%s program=%u cache=MISS translation=GLSL->SPIRV->SPIRVCROSS->ESSL input_version=330", 
-                      (type == GL_VERTEX_SHADER ? "VERTEX" : "FRAGMENT"), program);
-                
-                int errc = 0;
-                int glsl_ver = getGLSLVersion(raw_glsl.c_str());
-                std::string essl = GLSLtoGLSLES(raw_glsl.c_str(), type, hardware->es_version, glsl_ver, errc);
-                
-                if (errc >= 0 && !essl.empty()) {
-                    if (type == GL_VERTEX_SHADER) captured_v_essl = essl;
-                    if (type == GL_FRAGMENT_SHADER) {
-                        captured_f_essl = essl;
-                        // Apply frag data bindings for fragment shader
-                        for (const auto& b : g_frag_bindings[program]) {
-                            essl = updateLayoutLocation(essl, b.color, b.name.c_str());
-                        }
-                    }
-
-                    const char* src = essl.c_str();
-                    GLES.glShaderSource(sh, 1, &src, nullptr);
-                    GLES.glCompileShader(sh);
-                } else {
-                    LOG_E("Failed to translate GLSL for shader %u", sh);
-                }
-            } else {
-                if (type == GL_VERTEX_SHADER) captured_v_essl = raw_glsl;
-                if (type == GL_FRAGMENT_SHADER) captured_f_essl = raw_glsl;
-            }
-        }
-    }
-
     shaderInfo.id = 0;
     shaderInfo.converted = "";
     shaderInfo.frag_data_changed_converted.clear();
     shaderInfo.frag_data_changed = 0;
 
-    // Generate default fragment shader if needed (vertex-only program)
+    // ── ESSL pair cache ──────────────────────────────────────────────────────
+    // Try to look up the Vertex+Fragment ESSL pair from cache.
+    // key = combine_hashes(hash(v_essl), hash(f_essl)) — ESSL-based, never GLSL.
+    //
+    // CACHE HIT:
+    //   out_v_essl / out_f_essl contain the cached ESSL.
+    //   Re-submit them to the driver (glShaderSource + glCompileShader) and link.
+    //
+    // CACHE MISS:
+    //   Use the ESSL already produced by glShaderSource (in mg_cache_get_essl).
+    //   Save the pair to cache for future use.
+    //   Then link normally — the driver already has the correct ESSL.
+    {
+        std::string v_essl, f_essl;
+        bool hit = mg_cache_lookup_program(program, v_essl, f_essl);
+
+        if (hit) {
+            // ── CACHE HIT ───────────────────────────────────────────────────
+            // Find the vertex and fragment shader IDs attached to this program
+            // and re-submit the cached ESSL to the driver.
+            // The driver then compiles/links normally — the cache only skips
+            // the GLSL→ESSL conversion, not the driver compilation.
+            LOG_D("[MGSC] glLinkProgram HIT prog=%u — re-submitting cached ESSL to driver", program)
+
+            // We need to re-apply the cached ESSL.
+            // Query the driver for attached shaders to find their IDs.
+            GLint num_attached = 0;
+            GLES.glGetProgramiv(program, GL_ATTACHED_SHADERS, &num_attached);
+            if (num_attached > 0) {
+                std::vector<GLuint> shaders(num_attached);
+                GLES.glGetAttachedShaders(program, num_attached, nullptr, shaders.data());
+                for (GLuint sh : shaders) {
+                    GLint type = 0;
+                    GLES.glGetShaderiv(sh, GL_SHADER_TYPE, &type);
+                    const std::string* src = nullptr;
+                    if (type == GL_VERTEX_SHADER)   src = &v_essl;
+                    if (type == GL_FRAGMENT_SHADER)  src = &f_essl;
+                    if (src && !src->empty()) {
+                        const char* p = src->c_str();
+                        GLES.glShaderSource(sh, 1, &p, nullptr);
+                        GLES.glCompileShader(sh);
+                        GLint st = 0;
+                        GLES.glGetShaderiv(sh, GL_COMPILE_STATUS, &st);
+                        if (!st) {
+                            char buf[512];
+                            GLES.glGetShaderInfoLog(sh, 512, nullptr, buf);
+                            LOG_E("[MGSC] HIT: shader %u recompile failed:\n%s", sh, buf)
+                        }
+                    }
+                }
+            }
+        } else {
+            // ── CACHE MISS ──────────────────────────────────────────────────
+            // ESSL was already set on the driver by glShaderSource.
+            // Retrieve the ESSL from the per-shader map to save the pair.
+            // Do NOT convert GLSL again — the ESSL is already ready.
+            LOG_D("[MGSC] glLinkProgram MISS prog=%u — saving pair to cache", program)
+
+            // Collect ESSL for vertex+fragment shaders attached to this program
+            GLint num_attached = 0;
+            GLES.glGetProgramiv(program, GL_ATTACHED_SHADERS, &num_attached);
+            if (num_attached > 0) {
+                std::vector<GLuint> shaders(num_attached);
+                GLES.glGetAttachedShaders(program, num_attached, nullptr, shaders.data());
+                std::string v_miss, f_miss;
+                for (GLuint sh : shaders) {
+                    GLint type = 0;
+                    GLES.glGetShaderiv(sh, GL_SHADER_TYPE, &type);
+                    std::string e = mg_cache_get_essl(sh);
+                    if (type == GL_VERTEX_SHADER && !e.empty())   v_miss = e;
+                    if (type == GL_FRAGMENT_SHADER && !e.empty())  f_miss = e;
+                }
+                if (!v_miss.empty() && !f_miss.empty()) {
+                    mg_cache_save_program(program, v_miss, f_miss);
+                }
+            }
+        }
+    }
+    // ── End ESSL pair cache ──────────────────────────────────────────────────
+
+    // Generate default fragment shader if needed
     if (program_map_should_generate_fs[program] == ShouldGenerateFSState::Maybe) {
         GenerateDefaultFSSource();
         GLuint& default_fs = DefaultFSMap[CurrentDefaultFSSourceVersion];
@@ -223,41 +250,17 @@ void glLinkProgram(GLuint program) {
     }
 
     GLES.glLinkProgram(program);
+
     CHECK_GL_ERROR
-
-    // ── V2 Cache: save after successful MISS + link ─────────────────────────
-    // Save vertex+fragment ESSL pair so next run is a cache hit.
-    // Only save when we actually have ESSL content (normal pipeline ran).
-    // Vertex ESSL: retrieve from driver-compiled source via glGetShaderSource.
-    if (!captured_f_essl.empty()) {
-        GLint attached_count = 0;
-        GLES.glGetProgramiv(program, GL_ATTACHED_SHADERS, &attached_count);
-        if (attached_count >= 2) {
-            std::vector<GLuint> attached(attached_count);
-            GLES.glGetAttachedShaders(program, attached_count, nullptr, attached.data());
-            for (GLuint sh : attached) {
-                GLint type = 0;
-                GLES.glGetShaderiv(sh, GL_SHADER_TYPE, &type);
-                if (type == GL_VERTEX_SHADER && captured_v_essl.empty()) {
-                    GLint src_len = 0;
-                    GLES.glGetShaderiv(sh, GL_SHADER_SOURCE_LENGTH, &src_len);
-                    if (src_len > 1) {
-                        captured_v_essl.resize(src_len - 1);
-                        GLES.glGetShaderSource(sh, src_len, nullptr, &captured_v_essl[0]);
-                    }
-                }
-            }
-        }
-        if (!captured_v_essl.empty()) {
-            mg_cache_save_program(program, captured_v_essl, captured_f_essl);
-        }
-    }
-    // ── End V2 Cache save ───────────────────────────────────────────────────
 }
-
 
 void glGetProgramiv(GLuint program, GLenum pname, GLint* params) {
     LOG()
+    if (pname == 0x91B1 /* GL_COMPLETION_STATUS_ARB */) {
+        *params = GL_TRUE;
+        return;
+    }
+
     GLES.glGetProgramiv(program, pname, params);
     if (global_settings.ignore_error >= IgnoreErrorLevel::Partial &&
         (pname == GL_LINK_STATUS || pname == GL_VALIDATE_STATUS) && !*params) {
@@ -269,6 +272,11 @@ void glGetProgramiv(GLuint program, GLenum pname, GLint* params) {
         *params = GL_TRUE;
     }
     CHECK_GL_ERROR
+}
+
+void glMaxShaderCompilerThreadsKHR(GLuint count) {
+    LOG()
+    // KHR_parallel_shader_compile stub - ignored as GLES compiles synchronously
 }
 
 void glUseProgram(GLuint program) {
@@ -299,8 +307,11 @@ void glAttachShader(GLuint program, GLuint shader) {
         }
     }
 
-    GLES.glAttachShader(program, shader);
+    // Track program → shader association for the ESSL pair cache.
+    // mg_cache_attach is idempotent (ignores duplicates).
     mg_cache_attach(program, shader);
+
+    GLES.glAttachShader(program, shader);
     CHECK_GL_ERROR
 }
 

@@ -466,6 +466,15 @@ extern "C"
                     GLsizei width, GLsizei height, GLsizei depth, GLboolean fixedsamplelocations)
     GL_FUNC_TYPEDEF(void*, glMapBufferRange, GLenum target, GLintptr offset, GLsizeiptr length, GLbitfield access)
     GL_FUNC_TYPEDEF(void, glBufferStorageEXT, GLenum target, GLsizeiptr size, const void* data, GLbitfield flags)
+    GL_FUNC_TYPEDEF(void, glClearTexImageEXT, GLuint texture, GLint level, GLenum format, GLenum type, const void* data)
+    GL_FUNC_TYPEDEF(void, glClearTexSubImageEXT, GLuint texture, GLint level, GLint xoffset, GLint yoffset,
+                    GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type,
+                    const void* data)
+    GL_FUNC_TYPEDEF(void, glClipControlEXT, GLenum origin, GLenum depth)
+    GL_FUNC_TYPEDEF(void, glTexBufferEXT, GLenum target, GLenum internalformat, GLuint buffer)
+    GL_FUNC_TYPEDEF(void, glMinSampleShadingOES, GLfloat value)
+    GL_FUNC_TYPEDEF(void, glShaderStorageBlockBinding, GLuint program, GLuint storageBlockIndex,
+                    GLuint storageBlockBinding)
     GL_FUNC_TYPEDEF(void, glGetQueryObjectivEXT, GLuint id, GLenum pname, GLint* params)
     GL_FUNC_TYPEDEF(void, glGetQueryObjecti64vEXT, GLuint id, GLenum pname, GLint64* params)
     GL_FUNC_TYPEDEF(void, glBindFragDataLocationEXT, GLuint program, GLuint colorNumber, const GLchar* name)
@@ -844,6 +853,12 @@ extern "C"
         GL_FUNC_DECL(glTexStorage3DMultisample)
         GL_FUNC_DECL(glMapBufferRange)
         GL_FUNC_DECL(glBufferStorageEXT)
+        GL_FUNC_DECL(glClearTexImageEXT)
+        GL_FUNC_DECL(glClearTexSubImageEXT)
+        GL_FUNC_DECL(glClipControlEXT)
+        GL_FUNC_DECL(glTexBufferEXT)
+        GL_FUNC_DECL(glMinSampleShadingOES)
+        GL_FUNC_DECL(glShaderStorageBlockBinding)
         GL_FUNC_DECL(glGetQueryObjectivEXT)
         GL_FUNC_DECL(glGetQueryObjecti64vEXT)
         GL_FUNC_DECL(glBindFragDataLocationEXT)
