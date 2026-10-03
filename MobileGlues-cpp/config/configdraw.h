@@ -1,46 +1,42 @@
-// MobileGlues - config/configdraw.h
-// Draw modes configuration system - strict, no fallback
-// Copyright (c) 2025-2026 MobileGL-Dev
-// Licensed under the GNU Lesser General Public License v2.1
-// SPDX-License-Identifier: LGPL-2.1-only
-
 #pragma once
 
+#include <map>
 #include <string>
 #include <vector>
-#include <map>
-#include <cstdint>
 
-// ============================================================================
-// Draw Mode Types
-// ============================================================================
-
+// -----------------------------------------------------------------------------
+// Strict draw mode registry used by MobileGlues.
+// Each mode may be independently enabled or disabled. No silent fallback is
+// allowed: the selected mode must correspond directly to the draw path actually
+// used. When Sodium is detected, the funnel path is forced and the rest are
+// disabled.
+// -----------------------------------------------------------------------------
 enum class DrawModeType {
-    DrawElements,              // glDrawElements - basic draw loop
-    DrawElementsBaseVertex,    // glDrawElementsBaseVertex - with base vertex offset
-    MultiDrawIndirect,         // glDrawElementsIndirect per-draw
-    MultiDrawMultiIndirect,    // glMultiDrawElementsIndirectEXT - single GPU call
-    MultiDrawBaseVertex,       // glMultiDrawElementsBaseVertexEXT - EXT native
-    MultiDrawArrays,           // glMultiDrawArraysEXT
-    ComputeShaderFusion,       // Compute shader index fusion
-    FastPath,                  // Frustum culling + contiguous merge
-    FunnelEngine,              // Sodium terrain: merge contiguous basevertex runs
-    SodiumTierS,               // Sodium TIER S: shared-IBO detector
-    SodiumTierU,               // Sodium TIER U: micro-batch unroll
+    DrawElements,
+    DrawElementsBaseVertex,
+    MultiDrawIndirect,
+    MultiDrawMultiIndirect,
+    MultiDrawBaseVertex,
+    MultiDrawArrays,
+    ComputeShaderFusion,
+    FastPath,
+    FunnelEngine,
+    SodiumTierS,
+    SodiumTierU,
 };
 
 struct DrawModeConfig {
     DrawModeType type;
     std::string name;
     bool enabled;
-    
-    struct {
+
+    struct Params {
         bool useRestartEmulation;
         int maxBatchSize;
         bool validateOnEveryCall;
     } params;
-    
-    struct {
+
+    struct Meta {
         std::string description;
         bool sodiumOnly;
         bool requiresExtension;
@@ -50,42 +46,38 @@ struct DrawModeConfig {
     } meta;
 };
 
-// ============================================================================
-// Configuration Manager
-// ============================================================================
-
 class DrawModeConfigManager {
 public:
     DrawModeConfigManager();
     ~DrawModeConfigManager();
-    
+
     bool loadFromJSON(const std::string& configPath);
     bool saveToJSON(const std::string& configPath);
-    
+
     const DrawModeConfig* getMode(DrawModeType type) const;
     const DrawModeConfig* getModeByName(const std::string& name) const;
-    
+
     void enableMode(DrawModeType type);
     void disableMode(DrawModeType type);
     bool isModeEnabled(DrawModeType type) const;
-    
+
     void setSodiumDetected(bool detected);
     bool isSodiumDetected() const;
-    
+
     std::vector<DrawModeType> getEnabledModes() const;
     DrawModeType getActiveMode() const;
     DrawModeType getActiveModeForEntryPoint(const std::string& entryPoint) const;
-    
+
     bool validate() const;
     std::string getLastError() const;
     std::string dumpConfig() const;
-    
+
 private:
     std::map<DrawModeType, DrawModeConfig> modes;
     std::string lastError;
     bool sodiumDetected;
     DrawModeType activePrimaryMode;
-    
+
     void initializeDefaults();
     void enableSodiumExclusiveMode();
 };

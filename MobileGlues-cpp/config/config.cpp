@@ -24,6 +24,7 @@ char* DEFAULT_MG_DIRECTORY_PATH = "/sdcard/MG";
 bool is_custom_mg_dir = false;
 char* mg_directory_path = nullptr;
 char* config_file_path = nullptr;
+char* draw_config_file_path = nullptr;
 char* log_file_path = nullptr;
 char* glsl_cache_file_path = nullptr;
 
@@ -45,6 +46,7 @@ int check_path() {
         mg_directory_path = var ? strdup(var) : DEFAULT_MG_DIRECTORY_PATH;
     }
     config_file_path = concatenate(mg_directory_path, "/config.json");
+    draw_config_file_path = concatenate(mg_directory_path, "/configdraw.json");
     log_file_path = concatenate(mg_directory_path, "/latest.log");
     glsl_cache_file_path = concatenate(mg_directory_path, "/glsl_cache.tmp");
     stats_file_path = concatenate(mg_directory_path, "/stats.json");
@@ -59,6 +61,7 @@ int check_path() {
 int config_refresh() {
     LOG_D("MG_DIRECTORY_PATH=%s", mg_directory_path)
     LOG_D("CONFIG_FILE_PATH=%s", config_file_path)
+    LOG_D("DRAW_CONFIG_FILE_PATH=%s", draw_config_file_path)
     LOG_D("LOG_FILE_PATH=%s", log_file_path)
     LOG_D("GLSL_CACHE_FILE_PATH=%s", glsl_cache_file_path)
 

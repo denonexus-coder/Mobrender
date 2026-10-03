@@ -75,7 +75,7 @@ static bool get_bool(cJSON* obj, const char* name, bool default_value) {
     if (!obj) return default_value;
     cJSON* item = cJSON_GetObjectItemCaseSensitive(obj, name);
     if (!item || !cJSON_IsBool(item)) return default_value;
-    return cJSON_IsTrue(item) ? true : false;
+    return cJSON_IsTrue(item);
 }
 
 static int get_int(cJSON* obj, const char* name, int default_value) {
@@ -92,7 +92,7 @@ static const char* get_string(cJSON* obj, const char* name, const char* default_
     return item->valuestring;
 }
 
-}; // namespace
+} // namespace
 
 DrawModeConfigManager* g_drawModeConfig = nullptr;
 
@@ -162,7 +162,7 @@ const DrawModeConfig* DrawModeConfigManager::getMode(DrawModeType type) const {
 }
 
 const DrawModeConfig* DrawModeConfigManager::getModeByName(const std::string& name) const {
-    for (auto& it : modes) {
+    for (const auto& it : modes) {
         if (it.second.name == name) return &it.second;
     }
     return nullptr;
@@ -209,6 +209,11 @@ DrawModeType DrawModeConfigManager::getActiveMode() const {
     return activePrimaryMode;
 }
 
+DrawModeType DrawModeConfigManager::getActiveModeForEntryPoint(const std::string& entryPoint) const {
+    (void)entryPoint;
+    return activePrimaryMode;
+}
+
 void DrawModeConfigManager::enableSodiumExclusiveMode() {
     for (auto& it : modes) {
         it.second.enabled = false;
@@ -236,6 +241,16 @@ std::string DrawModeConfigManager::getLastError() const {
     return lastError;
 }
 
+std::string DrawModeConfigManager::dumpConfig() const {
+    std::stringstream ss;
+    ss << "sodiumDetected=" << (sodiumDetected ? "true" : "false") << "\n";
+    ss << "activePrimaryMode=" << mode_to_string(activePrimaryMode) << "\n";
+    for (const auto& it : modes) {
+        ss << it.second.name << "=" << (it.second.enabled ? "enabled" : "disabled") << "\n";
+    }
+    return ss.str();
+}
+
 bool DrawModeConfigManager::loadFromJSON(const std::string& configPath) {
     const std::string path = configPath.empty() ? default_config_path() : configPath;
     ensure_parent_dir(path);
@@ -253,7 +268,7 @@ bool DrawModeConfigManager::loadFromJSON(const std::string& configPath) {
 
     std::ostringstream buffer;
     buffer << in.rdbuf();
-    std::string jsonText = buffer.str();
+    const std::string jsonText = buffer.str();
 
     cJSON* root = cJSON_Parse(jsonText.c_str());
     if (!root) {
@@ -277,17 +292,16 @@ bool DrawModeConfigManager::loadFromJSON(const std::string& configPath) {
             if (it == modes.end()) continue;
 
             DrawModeConfig& cfg = it->second;
-            cJSON* modeObj = child;
-            cfg.enabled = get_bool(modeObj, "enabled", cfg.enabled);
-            cfg.meta.sodiumOnly = get_bool(modeObj, "sodiumOnly", cfg.meta.sodiumOnly);
-            cfg.meta.requiresExtension = get_bool(modeObj, "requiresExtension", cfg.meta.requiresExtension);
-            cfg.meta.requiredExtension = get_string(modeObj, "requiredExtension", cfg.meta.requiredExtension.c_str());
-            cfg.meta.requiresComputeShader = get_bool(modeObj, "requiresComputeShader", cfg.meta.requiresComputeShader);
-            cfg.meta.isOptimizationLayer = get_bool(modeObj, "isOptimizationLayer", cfg.meta.isOptimizationLayer);
-            const char* desc = get_string(modeObj, "description", cfg.meta.description.c_str());
+            cfg.enabled = get_bool(child, "enabled", cfg.enabled);
+            cfg.meta.sodiumOnly = get_bool(child, "sodiumOnly", cfg.meta.sodiumOnly);
+            cfg.meta.requiresExtension = get_bool(child, "requiresExtension", cfg.meta.requiresExtension);
+            cfg.meta.requiredExtension = get_string(child, "requiredExtension", cfg.meta.requiredExtension.c_str());
+            cfg.meta.requiresComputeShader = get_bool(child, "requiresComputeShader", cfg.meta.requiresComputeShader);
+            cfg.meta.isOptimizationLayer = get_bool(child, "isOptimizationLayer", cfg.meta.isOptimizationLayer);
+            const char* desc = get_string(child, "description", cfg.meta.description.c_str());
             cfg.meta.description = desc ? desc : cfg.meta.description;
 
-            cJSON* params = cJSON_GetObjectItemCaseSensitive(modeObj, "params");
+            cJSON* params = cJSON_GetObjectItemCaseSensitive(child, "params");
             if (params) {
                 cfg.params.useRestartEmulation = get_bool(params, "useRestartEmulation", cfg.params.useRestartEmulation);
                 cfg.params.maxBatchSize = get_int(params, "maxBatchSize", cfg.params.maxBatchSize);
@@ -298,8 +312,8 @@ bool DrawModeConfigManager::loadFromJSON(const std::string& configPath) {
 
     cJSON* strategy = cJSON_GetObjectItemCaseSensitive(root, "modeSelectionStrategy");
     if (strategy && cJSON_IsObject(strategy)) {
-        const char* primaryMode = get_string(strategy, "primaryMode", "drawElements");
-        activePrimaryMode = string_to_mode(primaryMode);
+        const char* primaryMode = get_string(strategy, "primaryMode", mode_to_string(activePrimaryMode).c_str());
+        activePrimaryMode = string_to_mode(primaryMode ? primaryMode : mode_to_string(activePrimaryMode));
     }
 
     cJSON_Delete(root);
