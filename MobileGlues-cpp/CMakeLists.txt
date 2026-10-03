@@ -127,6 +127,7 @@ add_library(${CMAKE_PROJECT_NAME} SHARED
     config/config.cpp
     config/gpu_utils.cpp
     config/settings.cpp
+    config/configdraw.cpp
     config/stats.cpp
 )
 
